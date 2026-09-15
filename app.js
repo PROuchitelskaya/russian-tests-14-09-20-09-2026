@@ -65,30 +65,83 @@
 
   /* ---------- главная ---------- */
   /* ---------- демо-режим ----------
-     Демо-страница (demo/index.html) объявляет window.DEMO_MODE = { open: 2 }.
-     Тогда открыты только первые N классов, остальные показываются под замком.
+     Демо-страница (demo/index.html) объявляет window.DEMO_MODE:
+       { open: 2 }                        – открыты первые N классов;
+       { open: ["g5", "g11"], access: URL } – открыты перечисленные классы,
+         а клик по закрытому показывает плашку с кнопкой «Получить доступ».
      На полной версии флага нет – доступны все классы. */
   var DEMO = window.DEMO_MODE || null;
-  var OPEN_COUNT = DEMO ? (DEMO.open || 2) : DATA.grades.length;
+  var OPEN_IDS = DEMO && Array.isArray(DEMO.open) ? DEMO.open : null;
+  var OPEN_COUNT = DEMO ? (OPEN_IDS ? 0 : (DEMO.open || 2)) : DATA.grades.length;
+  var ACCESS_URL = DEMO && DEMO.access ? DEMO.access : null;
 
   function isLocked(gradeId) {
-    var i = DATA.grades.findIndex
-      ? DATA.grades.findIndex(function (g) { return g.id === gradeId; })
-      : -1;
-    if (i === -1) {
-      for (var k = 0; k < DATA.grades.length; k++) {
-        if (DATA.grades[k].id === gradeId) { i = k; break; }
-      }
+    if (!DEMO) return false;
+    if (OPEN_IDS) return OPEN_IDS.indexOf(gradeId) === -1;
+    var i = -1;
+    for (var k = 0; k < DATA.grades.length; k++) {
+      if (DATA.grades[k].id === gradeId) { i = k; break; }
     }
     return i >= OPEN_COUNT;
+  }
+
+  /* плашка «материалы в платном канале» */
+  var paywallReturnFocus = null;
+  function closePaywall() {
+    var pw = $("paywall");
+    if (!pw || pw.hidden) return;
+    pw.classList.remove("show");
+    document.documentElement.classList.remove("paywall-open");
+    setTimeout(function () { pw.hidden = true; }, 200);
+    if (paywallReturnFocus && paywallReturnFocus.focus) paywallReturnFocus.focus();
+    paywallReturnFocus = null;
+  }
+  function openPaywall(grade, fromEl) {
+    var pw = $("paywall");
+    if (!pw) {
+      pw = document.createElement("div");
+      pw.id = "paywall";
+      pw.className = "paywall";
+      pw.hidden = true;
+      pw.setAttribute("role", "dialog");
+      pw.setAttribute("aria-modal", "true");
+      pw.setAttribute("aria-labelledby", "paywall-title");
+      pw.innerHTML =
+        '<div class="paywall-backdrop" data-close></div>' +
+        '<div class="paywall-card">' +
+          '<button type="button" class="paywall-x" aria-label="Закрыть" data-close>×</button>' +
+          '<div class="paywall-lock" aria-hidden="true">🔒</div>' +
+          '<p class="paywall-grade" id="paywall-grade"></p>' +
+          '<h2 class="paywall-title" id="paywall-title">Доступно в платном канале</h2>' +
+          '<p class="paywall-text">Данные материалы доступны в платном канале. ' +
+            'Для перехода в платный канал нажми на кнопку «Получить доступ».</p>' +
+          '<a class="paywall-btn" id="paywall-btn" target="_blank" rel="noopener">Получить доступ</a>' +
+          '<p class="paywall-foot">PRO Учительская</p>' +
+        "</div>";
+      document.body.appendChild(pw);
+      pw.addEventListener("click", function (e) {
+        if (e.target.hasAttribute("data-close")) closePaywall();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") closePaywall();
+      });
+    }
+    $("paywall-btn").href = ACCESS_URL;
+    $("paywall-grade").textContent = grade ? grade.grade + " · " + grade.topic : "";
+    paywallReturnFocus = fromEl || null;
+    pw.hidden = false;
+    void pw.offsetWidth;
+    pw.classList.add("show");
+    document.documentElement.classList.add("paywall-open");
+    $("paywall-btn").focus();
   }
 
   function renderHome() {
     var store = loadStore();
     var grid = $("grade-grid");
     grid.innerHTML = "";
-    DATA.grades.forEach(function (g, idx) {
-      var locked = idx >= OPEN_COUNT;
+    DATA.grades.forEach(function (g) {
+      var locked = isLocked(g.id);
       var best = store[g.id];
       var card = document.createElement("button");
       card.type = "button";
@@ -98,19 +151,20 @@
       card.innerHTML =
         '<span class="gc-top"><span class="gc-grade">' + g.grade + "</span>" +
         (locked
-          ? '<span class="gc-chip gc-lock">🔒 в клубе</span>'
+          ? '<span class="gc-chip gc-lock">' + (ACCESS_URL ? "🔒 закрыто" : "🔒 в клубе") + "</span>"
           : '<span class="gc-chip">' + g.questions.length + " вопросов</span>") + "</span>" +
         '<span class="gc-topic">' + g.topic + "</span>" +
         '<p class="gc-desc">' + g.desc + "</p>" +
         '<span class="gc-meta">' +
         (locked
-          ? '<span class="gc-best">Открыто участникам клуба</span>'
+          ? '<span class="gc-best">' + (ACCESS_URL ? "Доступно в платном канале" : "Открыто участникам клуба") + "</span>"
           : (best
             ? '<span class="gc-best">Лучший результат: ' + best.best + " / " + best.total + "</span>"
             : "<span>Тест ещё не пройден</span>")) +
-        '<span class="gc-go">' + (locked ? "Открыть доступ →" : "Пройти →") + "</span></span>";
+        '<span class="gc-go">' + (locked ? (ACCESS_URL ? "Получить доступ →" : "Открыть доступ →") : "Пройти →") + "</span></span>";
       card.addEventListener("click", function () {
         if (locked) {
+          if (ACCESS_URL) { openPaywall(g, card); return; }
           toast("Этот класс открыт участникам PRO Учительской");
           window.open(DATA.meta.telegram || "https://t.me/UchitelskayaAG/1704", "_blank", "noopener");
           return;
@@ -125,7 +179,15 @@
   /* ---------- тест ---------- */
   function startQuiz(gradeId) {
     // В демо закрытый класс нельзя открыть и вручную через #g7 в адресной строке
-    if (isLocked(gradeId)) { goHome(); return; }
+    if (isLocked(gradeId)) {
+      goHome();
+      if (ACCESS_URL) {
+        for (var j = 0; j < DATA.grades.length; j++) {
+          if (DATA.grades[j].id === gradeId) { openPaywall(DATA.grades[j], null); break; }
+        }
+      }
+      return;
+    }
     var grade = null;
     for (var i = 0; i < DATA.grades.length; i++) {
       if (DATA.grades[i].id === gradeId) { grade = DATA.grades[i]; break; }
