@@ -87,12 +87,14 @@
 
   /* плашка «материалы в платном канале» */
   var paywallReturnFocus = null;
+  var paywallHideTimer = null;
   function closePaywall() {
     var pw = $("paywall");
     if (!pw || pw.hidden) return;
     pw.classList.remove("show");
     document.documentElement.classList.remove("paywall-open");
-    setTimeout(function () { pw.hidden = true; }, 200);
+    clearTimeout(paywallHideTimer);
+    paywallHideTimer = setTimeout(function () { pw.hidden = true; }, 200);
     if (paywallReturnFocus && paywallReturnFocus.focus) paywallReturnFocus.focus();
     paywallReturnFocus = null;
   }
@@ -129,6 +131,7 @@
     $("paywall-btn").href = ACCESS_URL;
     $("paywall-grade").textContent = grade ? grade.grade + " · " + grade.topic : "";
     paywallReturnFocus = fromEl || null;
+    clearTimeout(paywallHideTimer);
     pw.hidden = false;
     void pw.offsetWidth;
     pw.classList.add("show");
